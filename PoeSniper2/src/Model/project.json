@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0-*",
+  "description": "Model Class Library",
+  "authors": [ "maumar" ],
+  "tags": [ "" ],
+  "projectUrl": "",
+  "licenseUrl": "",
+  "frameworks": {
+    "net451": {
+      "dependencies": {
+        "Microsoft.EntityFrameworkCore.SqlServer": "1.0.0-rc2-20143"
+      }
+    }
+  },
+  "dependencies": {
+  }
+}

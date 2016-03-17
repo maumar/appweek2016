@@ -1,0 +1,27 @@
+{
+  "version": "1.0.0-*",
+  "description": "ItemIndexer Console Application",
+  "authors": [ "maumar" ],
+  "tags": [ "" ],
+  "projectUrl": "",
+  "licenseUrl": "",
+
+  "compilationOptions": {
+    "emitEntryPoint": true
+  },
+
+  "dependencies": {
+    "EntityFramework.SqlServer": "7.0.0-rc1-15921",
+    "Newtonsoft.Json": "8.0.3",
+    "System.Net.Http": "4.0.1-rc2-23826",
+    "System.Runtime.Serialization.Json": "4.0.1-rc2-23826"
+  },
+
+  "commands": {
+    "ItemIndexer": "ItemIndexer"
+  },
+
+  "frameworks": {
+    "dnx451": { }
+  }
+}
