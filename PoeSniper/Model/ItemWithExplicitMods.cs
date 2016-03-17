@@ -2,7 +2,7 @@
 
 namespace Model
 {
-    public class MagicalItem : Item
+    public class ItemWithExplicitMods : Item
     {
         public List<ItemMod> ExplicitMods { get; set; }
 

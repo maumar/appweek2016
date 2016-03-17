@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Model", "Model\Model.csproj
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Indexer", "Indexer\Indexer.csproj", "{56499A9A-1476-4DC0-AE45-8A870F885369}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "IndexerModel", "IndexerModel\IndexerModel.csproj", "{30152A90-0C12-4D89-8D94-370239CA74A5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +29,10 @@ Global
 		{56499A9A-1476-4DC0-AE45-8A870F885369}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{56499A9A-1476-4DC0-AE45-8A870F885369}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{56499A9A-1476-4DC0-AE45-8A870F885369}.Release|Any CPU.Build.0 = Release|Any CPU
+		{30152A90-0C12-4D89-8D94-370239CA74A5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{30152A90-0C12-4D89-8D94-370239CA74A5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{30152A90-0C12-4D89-8D94-370239CA74A5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{30152A90-0C12-4D89-8D94-370239CA74A5}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -2,7 +2,7 @@
 
 namespace Model
 {
-    public class ItemFeedChunk
+    public class FeedChunk
     {
         // composite key
         public string ChunkId { get; set; }
@@ -10,6 +10,6 @@ namespace Model
 
         public string NextChunkId { get; set; }
 
-        public List<ItemFeedChunkAccounts> ChunkAccounts { get; set; }
+        public List<FeedChunkAccount> FeedChunkAccounts { get; set; }
     }
 }

@@ -140,19 +140,13 @@
   <ItemGroup>
     <Compile Include="Account.cs" />
     <Compile Include="Item.cs" />
-    <Compile Include="ItemFeedChunk.cs" />
-    <Compile Include="ItemFeedChunkAccounts.cs" />
+    <Compile Include="FeedChunk.cs" />
+    <Compile Include="FeedChunkAccount.cs" />
     <Compile Include="ItemMod.cs" />
     <Compile Include="ItemRequirement.cs" />
-    <Compile Include="MagicalItem.cs" />
-    <Compile Include="Migrations\20160316024845_Mig1_Initial.cs" />
-    <Compile Include="Migrations\20160316024845_Mig1_Initial.designer.cs">
-      <DependentUpon>20160316024845_Mig1_Initial.cs</DependentUpon>
-    </Compile>
-    <Compile Include="Migrations\PoeSniperContextModelSnapshot.cs" />
+    <Compile Include="ItemWithExplicitMods.cs" />
     <Compile Include="PoeSniperContext.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="Stash.cs" />
     <Compile Include="StashTab.cs" />
     <Compile Include="UniqueItem.cs" />
   </ItemGroup>

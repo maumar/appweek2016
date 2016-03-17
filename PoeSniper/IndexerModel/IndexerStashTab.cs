@@ -4,18 +4,17 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Model
+namespace IndexerModel
 {
-    public class StashTab
+    public class IndexerStashTab
     {
         public string Id { get; set; }
 
         public string TabName { get; set; }
+
         public string League { get; set; }
 
-        public Account Account { get; set; }
+        // FK -> Account
         public string AccountName { get; set; }
-
-        public List<Item> Items { get; set; }
     }
 }

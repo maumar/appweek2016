@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace Model
 {
-    public class UniqueItem : MagicalItem
+    public class UniqueItem : ItemWithExplicitMods
     {
         public string FlavorText { get; set; }
     }

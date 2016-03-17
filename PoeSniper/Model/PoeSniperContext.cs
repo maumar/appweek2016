@@ -5,10 +5,9 @@ namespace Model
 {
     public class PoeSniperContext : DbContext
     {
-        public DbSet<ItemFeedChunk> ItemFeedChunks { get; set; }
+        public DbSet<FeedChunk> FeedChunks { get; set; }
         public DbSet<Account> Accounts { get; set; }
-        public DbSet<ItemFeedChunkAccounts> ChunkAccounts { get; set; }
-        public DbSet<Stash> Stashes { get; set; }
+        public DbSet<FeedChunkAccount> FeedChunkAccounts { get; set; }
         public DbSet<StashTab> StashTabs { get; set; }
         public DbSet<Item> Items { get; set; }
         public DbSet<ItemMod> ItemMods { get; set; }
@@ -18,7 +17,7 @@ namespace Model
             var connectionString = new SqlConnectionStringBuilder
             {
                 DataSource = ".",
-                InitialCatalog = "PoeSniper6",
+                InitialCatalog = "PoeSniperNew",
                 MultipleActiveResultSets = true,
                 IntegratedSecurity = true
             }.ToString();
@@ -28,22 +27,25 @@ namespace Model
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.Entity<ItemFeedChunk>().HasKey(e => new { e.ChunkId, e.Index });
+            modelBuilder.Entity<FeedChunk>().HasKey(e => new { e.ChunkId, e.Index });
+            modelBuilder.Entity<FeedChunk>().HasMany(e => e.FeedChunkAccounts).WithOne(e => e.Chunk).HasForeignKey(e => new { e.ChunkId, e.Index });
+
+            modelBuilder.Entity<FeedChunkAccount>().HasKey(e => new { e.ChunkId, e.Index, e.AccountName });
 
             modelBuilder.Entity<Account>().HasKey(e => e.AccountName);
-
-            modelBuilder.Entity<Stash>().HasKey(e => new { e.AccountName, e.League });
-            modelBuilder.Entity<Stash>().HasOne(e => e.Account).WithMany(e => e.Stashes).HasForeignKey("AccountName");
-            modelBuilder.Entity<Stash>().HasMany(e => e.StashTabs).WithOne(e => e.Stash).HasForeignKey("AccountName", "League");
+            modelBuilder.Entity<Account>().HasMany(e => e.ChunkAccounts).WithOne(e => e.Account).HasForeignKey(e => e.AccountName);
+            modelBuilder.Entity<Account>().HasMany(e => e.StashTabs).WithOne(e => e.Account).HasForeignKey(e => e.AccountName);
 
             modelBuilder.Entity<StashTab>().HasKey(e => new { e.Id });
-            modelBuilder.Entity<StashTab>().HasMany(e => e.Items).WithOne().HasForeignKey("StashTabId").IsRequired();
+            modelBuilder.Entity<StashTab>().HasMany(e => e.Items).WithOne().HasForeignKey(e => e.StashTabId);
 
-            modelBuilder.Entity<Item>().HasKey(e => new { e.Id, e.Name });
-            modelBuilder.Entity<MagicalItem>().HasBaseType<Item>();
-            modelBuilder.Entity<UniqueItem>().HasBaseType<MagicalItem>();
+            modelBuilder.Entity<Item>().HasKey(e => e.Id);
+            modelBuilder.Entity<Item>().HasMany(e => e.ImplicitMods).WithOne(e => e.ItemImplicit).HasForeignKey(e => e.ItemImplicitId);
 
-            modelBuilder.Entity<ItemFeedChunkAccounts>().HasKey(e => new { e.ChunkId, e.Index, e.AccountName });
+            modelBuilder.Entity<ItemWithExplicitMods>().HasBaseType<Item>();
+            modelBuilder.Entity<ItemWithExplicitMods>().HasMany(e => e.ExplicitMods).WithOne(e => e.ItemExplicit).HasForeignKey(e => e.ItemExplicitId);
+
+            modelBuilder.Entity<UniqueItem>().HasBaseType<ItemWithExplicitMods>();
         }
     }
 }
