@@ -1,0 +1,22 @@
+{
+	"itemQueries": 
+	[
+		{
+			"queryName": "Lightning Coil",
+			"itemName": "Lightning Coil Desert Brigandine",
+			"properties":
+			[
+				{
+					"name":"X to maximum Life",
+					"minValue":"75",
+					"maxValue":""
+				},
+				{
+					"name":"X% increased Armour and Evasion",
+					"minValue":"115",
+					"maxValue":""
+				}
+			]
+		}
+	]
+}

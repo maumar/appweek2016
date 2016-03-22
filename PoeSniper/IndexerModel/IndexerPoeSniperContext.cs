@@ -42,20 +42,22 @@ namespace IndexerModel
             modelBuilder.Entity<IndexerFeedChunkAccount>().ToTable("FeedChunkAccounts");
             modelBuilder.Entity<IndexerFeedChunkAccount>().HasKey(e => new { e.ChunkId, e.Index, e.AccountName });
 
+            modelBuilder.Entity<IndexerStashTab>().ToTable("StashTabs");
+            modelBuilder.Entity<IndexerStashTab>().HasKey(e => e.Id);
+
             modelBuilder.Entity<IndexerItem>().ToTable("Items");
             modelBuilder.Entity<IndexerItem>().HasKey(e => e.Id);
+            modelBuilder.Entity<IndexerItem>().HasDiscriminator().HasValue("Item");
+
+            modelBuilder.Entity<IndexerItemWithExplicitMods>().HasBaseType<IndexerItem>().HasDiscriminator().HasValue("ItemWithExplicitMods");
+            modelBuilder.Entity<IndexerUniqueItem>().HasBaseType<IndexerItemWithExplicitMods>().HasDiscriminator().HasValue("UniqueItem");
 
             modelBuilder.Entity<IndexerItemMod>().ToTable("ItemMods");
             modelBuilder.Entity<IndexerItemMod>().HasKey(e => new { e.ItemId, e.Index });
 
             modelBuilder.Entity<IndexerItemModName>().ToTable("ItemModNames");
             modelBuilder.Entity<IndexerItemModName>().HasKey(e => e.Id);
-
-            modelBuilder.Entity<IndexerStashTab>().ToTable("StashTabs");
-            modelBuilder.Entity<IndexerStashTab>().HasKey(e => e.Id);
-
-            modelBuilder.Entity<IndexerItemWithExplicitMods>().HasBaseType<IndexerItem>();
-            modelBuilder.Entity<IndexerUniqueItem>().HasBaseType<IndexerItemWithExplicitMods>();
+            modelBuilder.Entity<IndexerItemModName>().Property(e => e.Id).ValueGeneratedNever();
         }
     }
 }

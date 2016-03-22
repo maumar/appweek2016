@@ -6,9 +6,11 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.RegularExpressions;
 using IndexerModel;
 using Model;
 using Newtonsoft.Json;
+using Microsoft.EntityFrameworkCore;
 
 namespace Indexer
 {
@@ -16,36 +18,54 @@ namespace Indexer
     {
         static void Main(string[] args)
         {
-
             var nextChunkId = "";
             int index = 0;
+            var itemModNameMapping = new Dictionary<string, int>();
             using (var ctx = new PoeSniperContext())
             {
-                ctx.Database.EnsureDeleted();
-                ctx.Database.EnsureCreated();
+                //ctx.Database.EnsureDeleted();
+                //ctx.Database.EnsureCreated();
 
                 var lastChunk = ctx.FeedChunks.OrderByDescending(e => e.Index).FirstOrDefault();
                 nextChunkId = lastChunk != null ? lastChunk.NextChunkId : "";
                 index = lastChunk?.Index ?? 0;
+
+                itemModNameMapping = ctx.ItemModNames.ToDictionary(e => e.Text, e => e.Id);
             }
 
-            //var query = ctx.FeedChunks
-            //    .Include(c => c.ChunkAccounts)
-            //    .ThenInclude(s => s.Account)
-            //    .ThenInclude(a => a.StashTabs)
-            //    .ThenInclude(s => s.Items)
-            //    .Where(c => c.ChunkAccounts.Any(ca => ca.Account.StashTabs.Count > 0)).Take(2);
-
-            //var result = query.ToList();
-
-            nextChunkId = "1618738-1717914-1600548-1876913-1779100";
+            //nextChunkId = "1844560-1954128-1822803-2139656-2027865";
+            var cleanupTimer = 0;
 
             while (true)
             {
-                nextChunkId = FetchItemFeedChunk(nextChunkId, index);
+                nextChunkId = FetchItemFeedChunk(nextChunkId, index, itemModNameMapping);
                 index++;
+                cleanupTimer++;
+                if (cleanupTimer == 10)
+                {
+                    //DeleteStaleStashTabs();
+                    cleanupTimer = 0;
+                }
             }
+        }
 
+        private static void DeleteStaleStashTabs()
+        {
+            var timeStamp = DateTime.Now.AddMinutes(-60);
+
+            using (var ctx = new PoeSniperContext())
+            {
+                Console.WriteLine("Removing stale stash tabs");
+
+                Console.WriteLine("items before: " + ctx.Items.Count());
+                var sw = new Stopwatch();
+                sw.Start();
+                var result = ctx.Database.ExecuteSqlCommand("DELETE FROM [StashTabs] WHERE DateAdded < {0}", timeStamp);
+
+                Console.WriteLine("Done. Removed " + result + " tabs. " + sw.Elapsed);
+                Console.WriteLine("items after: " + ctx.Items.Count());
+                Console.WriteLine();
+            }
         }
 
         private static RootObject GetJsonRootObject(string chunkId)
@@ -100,7 +120,7 @@ namespace Indexer
 
             var newAccounts = new List<IndexerAccount>();
             var feedChunkAccounts = new List<IndexerFeedChunkAccount>();
-            foreach (var newAccountJson in newAccountsJson)
+            foreach (var newAccountJson in newAccountsJson.Where(e => e.accountName != null))
             {
                 var newAccount = new IndexerAccount
                 {
@@ -124,14 +144,6 @@ namespace Indexer
                 feedChunkAccounts.Add(feedChunkAccount);
             }
 
-
-            //foreach (var zip in newAccounts.Zip(feedChunkAccounts, (o, i) => new { o, i }))
-            //{
-            //    ctx.Accounts.AddRange(zip.o);
-            //    ctx.FeedChunkAccounts.AddRange(zip.i);
-            //    ctx.SaveChanges();
-            //}
-
             ctx.Accounts.AddRange(newAccounts);
             ctx.SaveChanges();
 
@@ -141,13 +153,18 @@ namespace Indexer
             return allAccounts;
         }
 
-        public static string FetchItemFeedChunk(string chunkId, int lastChunkIndex)
+        public static string FetchItemFeedChunk(string chunkId, int lastChunkIndex, Dictionary<string, int> itemModNameMapping)
         {
             var rootObject = GetJsonRootObject(chunkId);
 
+            Console.WriteLine("Processing");
             var sw = new Stopwatch();
             sw.Start();
 
+            var stashTabs = new List<IndexerStashTab>();
+            var items = new List<IndexerItem>();
+            var itemMods = new List<IndexerItemMod>();
+            var newItemModNames = new List<IndexerItemModName>();
             using (var ctx = new IndexerPoeSniperContext())
             {
                 var accounts = CreateAccounts(ctx, chunkId, lastChunkIndex, rootObject);
@@ -159,18 +176,18 @@ namespace Indexer
                     Console.WriteLine("Removing existing stash tabs: " + exisitingStashTabs.Count);
 
                     ctx.StashTabs.RemoveRange(exisitingStashTabs);
+                    ctx.SaveChanges();
                 }
 
-                //var allItemMods = new List<ItemMod>();
-                var permanentLeagueSashesCount = 0;
-                var emptyStashesCount = 0;
                 var itemCount = 0;
 
-                var stashTabs = new List<IndexerStashTab>();
-                var items = new List<IndexerItem>();
+                var damageRangeRegex = new Regex(@"(?<damageRange>\d+-\d+)", RegexOptions.Compiled);
+                var genericPropertyRegex = new Regex(@"(?<value>" + Regex.Escape("+") + @"?-?\d+" + Regex.Escape(".") + @"?\d*)", RegexOptions.Compiled);
+
 
                 var i = 0;
-                foreach (var jsonStash in rootObject.stashes)
+                var timeStamp = DateTime.Now;
+                foreach (var jsonStash in rootObject.stashes.Where(e => e.accountName != null))
                 {
                     i++;
 
@@ -182,15 +199,8 @@ namespace Indexer
                     }
 
                     var league = jsonStash.items.FirstOrDefault()?.league ?? "Unknown";
-                    if (league == "Standard" || league == "Hardcore")
+                    if (league != "Hardcore Perandus")
                     {
-                        permanentLeagueSashesCount++;
-                        continue;
-                    }
-
-                    if (league == "Unknown")
-                    {
-                        emptyStashesCount++;
                         continue;
                     }
 
@@ -198,6 +208,8 @@ namespace Indexer
                     {
                         Id = jsonStash.id,
                         TabName = jsonStash.stash,
+                        DateAdded = timeStamp,
+                        AccountName = jsonStash.accountName,
                     };
 
                     stashTabs.Add(stashTab);
@@ -205,6 +217,80 @@ namespace Indexer
                     foreach (var jsonItem in jsonStash.items)
                     {
                         itemCount++;
+
+                        var modIndex = 0;
+                        if (jsonItem.explicitMods != null)
+                        {
+                            foreach (var mod in jsonItem.explicitMods)
+                            {
+                                modIndex++;
+
+                                if (mod.StartsWith("<"))
+                                {
+                                    continue;
+                                }
+
+                                decimal modValue;
+                                string modName;
+
+                                var match = damageRangeRegex.Match(mod);
+                                if (match.Success)
+                                {
+                                    modName = mod.Replace(match.Value, "X");
+                                    var range = match.Value.Split(new[] { "-" }, StringSplitOptions.RemoveEmptyEntries);
+                                    modValue = (decimal.Parse(range[0]) + decimal.Parse(range[1])) / 2.0M;
+                                }
+                                else
+                                {
+                                    match = genericPropertyRegex.Match(mod);
+                                    if (decimal.TryParse(match.Value, out modValue))
+                                    {
+                                        modName = mod.Replace(match.Value, "X");
+                                    }
+                                    else
+                                    {
+                                        modName = mod;
+                                    }
+                                }
+
+                                int modNameId;
+                                if (!itemModNameMapping.TryGetValue(modName, out modNameId))
+                                {
+                                    var newItemModName = new IndexerItemModName
+                                    {
+                                        Id = itemModNameMapping.Count + 1,
+                                        Text = modName,
+                                    };
+
+                                    itemModNameMapping.Add(newItemModName.Text, newItemModName.Id);
+                                    newItemModNames.Add(newItemModName);
+                                    modNameId = newItemModName.Id;
+                                }
+
+                                var itemMod = new IndexerItemMod
+                                {
+                                    ItemId = jsonItem.id,
+                                    Index = modIndex,
+                                    ModNameId = modNameId,
+                                    Value = modValue,
+                                    ItemExplicitId = jsonItem.id,
+                                };
+
+                                itemMods.Add(itemMod);
+                            }
+                        }
+
+                        var lastIndexOf = jsonItem.Name.LastIndexOf(">");
+                        var itemName = lastIndexOf > -1 ? jsonItem.Name.Substring(lastIndexOf + 1) : jsonItem.Name;
+
+                        if (itemName == "")
+                        {
+                            itemName = jsonItem.typeLine;
+                        }
+                        else
+                        {
+                            itemName = itemName + " " + jsonItem.typeLine;
+                        }
 
                         IndexerItem item;
                         if (jsonItem.explicitMods == null)
@@ -215,9 +301,8 @@ namespace Indexer
 
                                 Corrupted = jsonItem.corrupted,
                                 Ilvl = jsonItem.ilvl,
-                                Name = jsonItem.Name,
+                                Name = itemName,
                                 StashTabId = jsonStash.id,
-                                TypeLine = jsonItem.typeLine,
                             };
                         }
                         else
@@ -230,9 +315,8 @@ namespace Indexer
 
                                     Corrupted = jsonItem.corrupted,
                                     Ilvl = jsonItem.ilvl,
-                                    Name = jsonItem.Name,
+                                    Name = itemName,
                                     StashTabId = jsonStash.id,
-                                    TypeLine = jsonItem.typeLine,
                                 };
                             }
                             else
@@ -243,673 +327,84 @@ namespace Indexer
 
                                     Corrupted = jsonItem.corrupted,
                                     Ilvl = jsonItem.ilvl,
-                                    Name = jsonItem.Name,
+                                    Name = itemName,
                                     StashTabId = jsonStash.id,
-                                    TypeLine = jsonItem.typeLine,
                                 };
                             }
                         }
 
-                        // TODO: add mods
                         items.Add(item);
-
-                        #region commented
-                        //if (jsonItem.explicitMods != null)
-                        //{
-                        //    foreach (var mod in jsonItem.explicitMods)
-                        //    {
-                        //        if (mod.StartsWith("<"))
-                        //        {
-                        //            continue;
-                        //        }
-
-                        //        m++;
-
-                        //        if (m % 250 == 0)
-                        //        {
-                        //            Console.Write("{" + itemCount + "}");
-                        //        }
-
-                        //        decimal modValue;
-                        //        string modName;
-
-                        //        var match = damageRangeRegex.Match(mod);
-                        //        if (match.Success)
-                        //        {
-                        //            modName = mod.Replace(match.Value, "X");
-                        //            var range = match.Value.Split(new[] { "-" }, StringSplitOptions.RemoveEmptyEntries);
-                        //            modValue = (decimal.Parse(range[0]) + decimal.Parse(range[1])) / 2.0M;
-                        //        }
-                        //        else
-                        //        {
-                        //            match = genericPropertyRegex.Match(mod);
-                        //            if (decimal.TryParse(match.Value, out modValue))
-                        //            {
-                        //                modName = mod.Replace(match.Value, "X");
-                        //            }
-                        //            else
-                        //            {
-                        //                modName = mod;
-                        //            }
-                        //        }
-
-                        //        var itemMod = new ItemMod
-                        //        {
-                        //            Name = mod.GetHashCode().ToString(),
-                        //            Value = modValue,
-                        //        };
-
-                        //        itemMods.Add(itemMod);
-                        //    }
-                        //}
-
-                        #endregion
                     }
                 }
 
-                Console.WriteLine("Processed " + itemCount + " items. ");
-                Console.Write("Saving to database");
-                ctx.StashTabs.AddRange(stashTabs);
-                Console.Write(".");
-                ctx.SaveChanges();
-                Console.Write(".");
-                ctx.Items.AddRange(items);
-                Console.Write(".");
-                ctx.SaveChanges();
-                Console.WriteLine(" Done");
+                Console.WriteLine("Done " + sw.Elapsed);
             }
 
-            Console.WriteLine(sw.Elapsed);
+            sw.Restart();
+
+            Console.Write("Saving to database: ");
+            using (var ctx = new IndexerPoeSniperContext())
+            {
+                Console.Write("Tabs(" + stashTabs.Count + ")");
+                ctx.StashTabs.AddRange(stashTabs);
+                ctx.SaveChanges();
+
+                Console.Write(" ModNames(" + newItemModNames.Count + ")");
+                ctx.ItemModNames.AddRange(newItemModNames);
+                ctx.SaveChanges();
+            }
+
+            Console.Write(" Items(" + items.Count + ")");
+            IEnumerable<IndexerItem> remainingItems = items;
+            while (remainingItems.Count() > 0)
+            {
+                var batchItems = remainingItems.Take(1000);
+                remainingItems = remainingItems.Skip(1000);
+
+                using (var ctx = new IndexerPoeSniperContext())
+                {
+                    ctx.Items.AddRange(batchItems);
+                    try
+                    {
+                        ctx.SaveChanges();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("!!! ERROR WHEN SAVING ITEMS: " + ex.Message);
+                    }
+                }
+
+                Console.Write(".");
+            }
+
+
+            Console.Write(" Mods(" + itemMods.Count + ")");
+            IEnumerable<IndexerItemMod> remainingItemMods = itemMods;
+            while (remainingItemMods.Count() > 0)
+            {
+                var batchItemMods = remainingItemMods.Take(1000);
+                remainingItemMods = remainingItemMods.Skip(1000);
+
+                using (var ctx = new IndexerPoeSniperContext())
+                {
+                    ctx.ItemMods.AddRange(batchItemMods);
+                    try
+                    {
+                        ctx.SaveChanges();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("!!! ERROR WHEN SAVING ITEM MODS: " + ex.Message);
+                    }
+                }
+
+                Console.Write(".");
+            }
+
+            Console.WriteLine(" Done " + sw.Elapsed);
+            Console.WriteLine();
 
             return rootObject.next_change_id;
         }
-
-            //IEnumerable<JsonStash> stashes = rootObject.stashes;
-
-            //while (stashes.Any())
-            //{
-            //    Fooooo(newChunk.ChunkId, newChunk.Index, stashes.Take(20), rootObject.stashes);
-            //    stashes = stashes.Skip(20);
-            //}
-
-
-                //using (var ctx = new PoeSniperContext())
-                //{
-                //    var newChunk = new ItemFeedChunk
-                //    {
-                //        ChunkId = chunkId,
-                //        Index = lastChunkIndex + 1,
-                //        NextChunkId = rootObject.next_change_id,
-                //        ChunkAccounts = new List<ItemFeedChunkAccounts>(),
-                //    };
-
-                //    ctx.ItemFeedChunks.Add(newChunk);
-                //    ctx.SaveChanges();
-
-                //    Console.Write(
-                //        (string.IsNullOrEmpty(chunkId)
-                //            ? "First chunk"
-                //            : "Chunk with ID " + chunkId));
-
-                //    Console.WriteLine(": " + rootObject.stashes.Count + " stashes, " + rootObject.stashes.SelectMany(s => s.items).Count() + " items ");
-
-                //    var accountNames = rootObject.stashes.Select(s => s.accountName).Distinct().ToArray();
-                //    var accounts = ctx.Accounts.Include(a => a.Stashes).ThenInclude<Account, Stash, List<StashTab>>(s => s.StashTabs)
-                //        .Where(e => accountNames.Contains(e.AccountName)).ToList();
-
-                //    var stashIds = rootObject.stashes.Select(s => s.id).ToArray();
-                //    var stashes = ctx.StashTabs.Where(st => stashIds.Contains(st.Id)).ToList();
-
-                //    var chunkAccounts = new List<ItemFeedChunkAccounts>();
-                //    foreach (var account in accounts)
-                //    {
-                //        var chunkAccount = new ItemFeedChunkAccounts
-                //        {
-                //            Chunk = newChunk,
-                //            Account = account,
-                //        };
-
-                //        chunkAccounts.Add(chunkAccount);
-                //    }
-
-                //    var standardStashesCount = 0;
-                //    var hardcoreStashesCount = 0;
-                //    var emptyStashesCount = 0;
-                //    var newAccountsCount = 0;
-                //    var addedItemsCount = 0;
-                //    var newStashTabs = new List<StashTab>();
-
-
-                //    var damageRangeRegex = new Regex(@"(?<damageRange>\d+-\d+)", RegexOptions.Compiled);
-                //    var genericPropertyRegex = new Regex(@"(?<value>" + Regex.Escape("+") + @"?-?\d+" + Regex.Escape(".") + @"?\d*)", RegexOptions.Compiled);
-
-                //    var m = 0;
-
-                //    var sta = 0;
-
-                //    var itemCount = 0;
-
-                //    var alltems = new List<Item>();
-                //    var allItemMods = new List<ItemMod>();
-                //    foreach (var jsonStash in rootObject.stashes)
-                //    {
-                //        sta++;
-                //        var account = accounts.Where(a => a.AccountName == jsonStash.accountName).FirstOrDefault();
-
-                //        if (account == null)
-                //        {
-                //            if (jsonStash.accountName == null)
-                //            {
-                //                continue;
-                //            }
-
-                //            account = new Account
-                //            {
-                //                AccountName = jsonStash.accountName,
-                //                LastCharacterName = jsonStash.lastCharacterName,
-                //                Stashes = new List<Stash>(),
-                //            };
-
-                //            ctx.Accounts.Add(account);
-                //            accounts.Add(account);
-                //            newAccountsCount++;
-
-                //            var chunkAccount = new ItemFeedChunkAccounts
-                //            {
-                //                Chunk = newChunk,
-                //                Account = account,
-                //            };
-
-                //            chunkAccounts.Add(chunkAccount);
-
-                //            //ctx.SaveChanges();
-                //        }
-
-                //        var league = jsonStash.items.FirstOrDefault()?.league ?? "Unknown";
-
-                //        if (league == "Standard")
-                //        {
-                //            standardStashesCount++;
-                //            continue;
-                //        }
-
-                //        if (league == "Hardcore")
-                //        {
-                //            hardcoreStashesCount++;
-                //            continue;
-                //        }
-
-                //        if (league == "Unknown")
-                //        {
-                //            emptyStashesCount++;
-                //            continue;
-                //        }
-
-
-                //        var stash = account.Stashes
-                //            .Where(s => s.League == league).FirstOrDefault();
-
-                //        if (stash == null)
-                //        {
-                //            stash = new Stash
-                //            {
-                //                AccountName = account.AccountName,
-                //                League = league,
-                //                StashTabs = new List<StashTab>(),
-                //            };
-
-                //            ctx.Stashes.Add(stash);
-                //            account.Stashes.Add(stash);
-                //            //ctx.SaveChanges();
-                //        }
-
-                //        var stashTab = stash.StashTabs
-                //            .Where(st => st.Id == jsonStash.id)
-                //            .FirstOrDefault();
-
-                //        if (stashTab != null)
-                //        {
-                //            // delete the stash tab - we want to clear all the items
-                //            ctx.StashTabs.Remove(stashTab);
-                //            stash.StashTabs.Remove(stashTab);
-
-                //            Console.WriteLine("!!! Deleting stash tab");
-                //            ctx.SaveChanges();
-                //        }
-
-                //        stashTab = new StashTab
-                //        {
-                //            Id = jsonStash.id,
-                //            Stash = stash,
-                //            Items = new List<Item>(),
-                //            TabName = jsonStash.stash,
-                //        };
-
-                //        ctx.StashTabs.Add(stashTab);
-                //        stash.StashTabs.Add(stashTab);
-                //        newStashTabs.Add(stashTab);
-                //        //ctx.SaveChanges();
-
-
-                //        foreach (var jsonItem in jsonStash.items)
-                //        {
-                //            itemCount++;
-
-                //            if (itemCount % 50 == 0)
-                //            {
-                //                Console.Write(" . ");
-                //            }
-
-                //            Item item;
-                //            var itemMods = new List<ItemMod>();
-
-                //            if (jsonItem.explicitMods != null)
-                //            {
-                //                foreach (var mod in jsonItem.explicitMods)
-                //                {
-                //                    if (mod.StartsWith("<"))
-                //                    {
-                //                        continue;
-                //                    }
-
-                //                    m++;
-
-                //                    if (m % 250 == 0)
-                //                    {
-                //                        Console.Write("{" + itemCount + "}");
-                //                    }
-
-                //                    decimal modValue;
-                //                    string modName;
-
-                //                    var match = damageRangeRegex.Match(mod);
-                //                    if (match.Success)
-                //                    {
-                //                        modName = mod.Replace(match.Value, "X");
-                //                        var range = match.Value.Split(new[] { "-" }, StringSplitOptions.RemoveEmptyEntries);
-                //                        modValue = (decimal.Parse(range[0]) + decimal.Parse(range[1])) / 2.0M;
-                //                    }
-                //                    else
-                //                    {
-                //                        match = genericPropertyRegex.Match(mod);
-                //                        if (decimal.TryParse(match.Value, out modValue))
-                //                        {
-                //                            modName = mod.Replace(match.Value, "X");
-                //                        }
-                //                        else
-                //                        {
-                //                            modName = mod;
-                //                        }
-                //                    }
-
-                //                    var itemMod = new ItemMod
-                //                    {
-                //                        Name = mod.GetHashCode().ToString(),
-                //                        Value = modValue,
-                //                    };
-
-                //                    itemMods.Add(itemMod);
-                //                }
-                //            }
-
-                //            if (jsonItem.explicitMods == null && jsonItem.flavourText == null)
-                //            {
-                //                item = new Item
-                //                {
-                //                    Id = jsonItem.id,
-                //                    Ilvl = jsonItem.ilvl,
-                //                    Name = jsonItem.Name,
-                //                    TypeLine = jsonItem.typeLine,
-                //                    Corrupted = jsonItem.corrupted,
-                //                };
-                //            }
-                //            else if (jsonItem.flavourText == null)
-                //            {
-                //                item = new MagicalItem
-                //                {
-                //                    Id = jsonItem.id,
-                //                    Ilvl = jsonItem.ilvl,
-                //                    Name = jsonItem.Name,
-                //                    TypeLine = jsonItem.typeLine,
-                //                    Corrupted = jsonItem.corrupted,
-                //                    ExplicitMods = itemMods,
-                //                };
-
-                //                allItemMods.AddRange(itemMods);
-                //                //ctx.ItemMods.AddRange(itemMods);
-                //            }
-                //            else
-                //            {
-                //                item = new UniqueItem
-                //                {
-                //                    Id = jsonItem.id,
-                //                    Ilvl = jsonItem.ilvl,
-                //                    Name = jsonItem.Name,
-                //                    TypeLine = jsonItem.typeLine,
-                //                    Corrupted = jsonItem.corrupted,
-                //                    ExplicitMods = itemMods,
-                //                };
-
-                //                allItemMods.AddRange(itemMods);
-                //                //ctx.ItemMods.AddRange(itemMods);
-                //            }
-
-                //            stashTab.Items.Add(item);
-                //            alltems.Add(item);
-                //            //ctx.Items.Add(item);
-                //            addedItemsCount++;
-                //        }
-                //    }
-
-                //    Console.WriteLine("Accounts - Exisitng: " + accounts.Count + " Added: " + newAccountsCount 
-                //        + " | Stashes - 'Std': " + standardStashesCount + " HC: " + hardcoreStashesCount + " Empty: " + emptyStashesCount + " Added: " + newStashTabs.Count
-                //        + " | Items - Added: " + addedItemsCount);
-                //    Console.WriteLine();
-
-                //    Console.Write("Adding items " + alltems.Count);
-                //    ctx.Items.AddRange(alltems);
-                //    Console.WriteLine("Done");
-
-                //    Console.Write("Adding mods " + allItemMods.Count);
-                //    ctx.ItemMods.AddRange(allItemMods);
-                //    Console.WriteLine("Done");
-
-                //    Console.Write("Adding accounts " + chunkAccounts.Count);
-                //    ctx.ChunkAccounts.AddRange(chunkAccounts);
-                //    Console.WriteLine("Done");
-
-                //    Console.Write("Save changes ");
-                //    ctx.SaveChanges();
-                //    Console.WriteLine("Done");
-
-                //}
-
-        //        Console.WriteLine(sw.Elapsed);
-
-
-        //    return rootObject.next_change_id;
-        //}
-
-
-        //private static  void Fooooo(string chunkId, int chunkIndex/*ItemFeedChunk newChunk*/, IEnumerable<JsonStash> jsonStashes, IEnumerable<JsonStash> allStashes)
-        //{
-        //    using (var ctx = new PoeSniperContext())
-        //    {
-
-        //        var accountNames = jsonStashes.Select(s => s.accountName).Distinct().ToArray();
-        //        var allAccountNames = allStashes.Select(s => s.accountName).Distinct().ToArray();
-        //        var accounts = ctx.Accounts.Include(a => a.Stashes).ThenInclude<Account, Stash, List<StashTab>>(s => s.StashTabs)
-        //            .Where(e => accountNames.Contains(e.AccountName)).ToList();
-
-        //        var allAccounts = ctx.Accounts.Include(a => a.Stashes).ThenInclude<Account, Stash, List<StashTab>>(s => s.StashTabs)
-        //            .Where(e => allAccountNames.Contains(e.AccountName)).ToList();
-
-        //        var stashIds = jsonStashes.Select(s => s.id).ToArray();
-        //        var stashes = ctx.StashTabs.Where(st => stashIds.Contains(st.Id)).ToList();
-
-
-
-
-
-        //        var standardStashesCount = 0;
-        //        var hardcoreStashesCount = 0;
-        //        var emptyStashesCount = 0;
-        //        var newAccountsCount = 0;
-        //        var addedItemsCount = 0;
-        //        var newStashTabs = new List<StashTab>();
-
-
-        //        var damageRangeRegex = new Regex(@"(?<damageRange>\d+-\d+)", RegexOptions.Compiled);
-        //        var genericPropertyRegex = new Regex(@"(?<value>" + Regex.Escape("+") + @"?-?\d+" + Regex.Escape(".") + @"?\d*)", RegexOptions.Compiled);
-
-        //        var m = 0;
-
-        //        var sta = 0;
-
-        //        var itemCount = 0;
-
-        //        var alltems = new List<Item>();
-        //        var allItemMods = new List<ItemMod>();
-        //        foreach (var jsonStash in jsonStashes)
-        //        {
-        //            sta++;
-        //            var account = accounts.Where(a => a.AccountName == jsonStash.accountName).FirstOrDefault();
-
-        //            if (account == null)
-        //            {
-        //                if (jsonStash.accountName == null)
-        //                {
-        //                    continue;
-        //                }
-
-        //                account = new Account
-        //                {
-        //                    AccountName = jsonStash.accountName,
-        //                    LastCharacterName = jsonStash.lastCharacterName,
-        //                    Stashes = new List<Stash>(),
-        //                };
-
-        //                ctx.Accounts.Add(account);
-        //                accounts.Add(account);
-        //                newAccountsCount++;
-
-        //                var chunkAccount = new ItemFeedChunkAccounts
-        //                {
-        //                    ChunkId = chunkId,
-        //                    Index = chunkIndex,
-        //                    AccountName = account.AccountName,
-        //                };
-
-        //                ctx.ChunkAccounts.Add(chunkAccount);
-        //                //chunkAccounts.Add(chunkAccount);
-
-        //                //ctx.SaveChanges();
-        //            }
-
-        //            var league = jsonStash.items.FirstOrDefault()?.league ?? "Unknown";
-
-        //            if (league == "Standard")
-        //            {
-        //                standardStashesCount++;
-        //                continue;
-        //            }
-
-        //            if (league == "Hardcore")
-        //            {
-        //                hardcoreStashesCount++;
-        //                continue;
-        //            }
-
-        //            if (league == "Unknown")
-        //            {
-        //                emptyStashesCount++;
-        //                continue;
-        //            }
-
-
-        //            var stash = account.Stashes
-        //                .Where(s => s.League == league).FirstOrDefault();
-
-        //            if (stash == null)
-        //            {
-        //                stash = new Stash
-        //                {
-        //                    AccountName = account.AccountName,
-        //                    League = league,
-        //                    StashTabs = new List<StashTab>(),
-        //                };
-
-        //                ctx.Stashes.Add(stash);
-        //                account.Stashes.Add(stash);
-        //                //ctx.SaveChanges();
-        //            }
-
-        //            var stashTab = stash.StashTabs
-        //                .Where(st => st.Id == jsonStash.id)
-        //                .FirstOrDefault();
-
-        //            if (stashTab != null)
-        //            {
-        //                // delete the stash tab - we want to clear all the items
-        //                ctx.StashTabs.Remove(stashTab);
-        //                stash.StashTabs.Remove(stashTab);
-
-        //                Console.WriteLine("!!! Deleting stash tab");
-        //                ctx.SaveChanges();
-        //            }
-
-        //            stashTab = new StashTab
-        //            {
-        //                Id = jsonStash.id,
-        //                Stash = stash,
-        //                Items = new List<Item>(),
-        //                TabName = jsonStash.stash,
-        //            };
-
-        //            ctx.StashTabs.Add(stashTab);
-        //            stash.StashTabs.Add(stashTab);
-        //            newStashTabs.Add(stashTab);
-        //            //ctx.SaveChanges();
-
-
-        //            foreach (var jsonItem in jsonStash.items)
-        //            {
-        //                itemCount++;
-
-        //                if (itemCount % 50 == 0)
-        //                {
-        //                    Console.Write(" . ");
-        //                }
-
-        //                Item item;
-        //                var itemMods = new List<ItemMod>();
-
-        //                if (jsonItem.explicitMods != null)
-        //                {
-        //                    foreach (var mod in jsonItem.explicitMods)
-        //                    {
-        //                        if (mod.StartsWith("<"))
-        //                        {
-        //                            continue;
-        //                        }
-
-        //                        m++;
-
-        //                        if (m % 250 == 0)
-        //                        {
-        //                            Console.Write("{" + itemCount + "}");
-        //                        }
-
-        //                        decimal modValue;
-        //                        string modName;
-
-        //                        var match = damageRangeRegex.Match(mod);
-        //                        if (match.Success)
-        //                        {
-        //                            modName = mod.Replace(match.Value, "X");
-        //                            var range = match.Value.Split(new[] { "-" }, StringSplitOptions.RemoveEmptyEntries);
-        //                            modValue = (decimal.Parse(range[0]) + decimal.Parse(range[1])) / 2.0M;
-        //                        }
-        //                        else
-        //                        {
-        //                            match = genericPropertyRegex.Match(mod);
-        //                            if (decimal.TryParse(match.Value, out modValue))
-        //                            {
-        //                                modName = mod.Replace(match.Value, "X");
-        //                            }
-        //                            else
-        //                            {
-        //                                modName = mod;
-        //                            }
-        //                        }
-
-        //                        var itemMod = new ItemMod
-        //                        {
-        //                            Name = mod.GetHashCode().ToString(),
-        //                            Value = modValue,
-        //                        };
-
-        //                        itemMods.Add(itemMod);
-        //                    }
-        //                }
-
-        //                if (jsonItem.explicitMods == null && jsonItem.flavourText == null)
-        //                {
-        //                    item = new Item
-        //                    {
-        //                        Id = jsonItem.id,
-        //                        Ilvl = jsonItem.ilvl,
-        //                        Name = jsonItem.Name,
-        //                        TypeLine = jsonItem.typeLine,
-        //                        Corrupted = jsonItem.corrupted,
-        //                    };
-        //                }
-        //                else if (jsonItem.flavourText == null)
-        //                {
-        //                    item = new MagicalItem
-        //                    {
-        //                        Id = jsonItem.id,
-        //                        Ilvl = jsonItem.ilvl,
-        //                        Name = jsonItem.Name,
-        //                        TypeLine = jsonItem.typeLine,
-        //                        Corrupted = jsonItem.corrupted,
-        //                        ExplicitMods = itemMods,
-        //                    };
-
-        //                    allItemMods.AddRange(itemMods);
-        //                    //ctx.ItemMods.AddRange(itemMods);
-        //                }
-        //                else
-        //                {
-        //                    item = new UniqueItem
-        //                    {
-        //                        Id = jsonItem.id,
-        //                        Ilvl = jsonItem.ilvl,
-        //                        Name = jsonItem.Name,
-        //                        TypeLine = jsonItem.typeLine,
-        //                        Corrupted = jsonItem.corrupted,
-        //                        ExplicitMods = itemMods,
-        //                    };
-
-        //                    allItemMods.AddRange(itemMods);
-        //                    //ctx.ItemMods.AddRange(itemMods);
-        //                }
-
-        //                stashTab.Items.Add(item);
-        //                alltems.Add(item);
-        //                //ctx.Items.Add(item);
-        //                addedItemsCount++;
-        //            }
-        //        }
-
-        //        Console.WriteLine("Accounts - Exisitng: " + accounts.Count + " Added: " + newAccountsCount
-        //            + " | Stashes - 'Std': " + standardStashesCount + " HC: " + hardcoreStashesCount + " Empty: " + emptyStashesCount + " Added: " + newStashTabs.Count
-        //            + " | Items - Added: " + addedItemsCount);
-        //        Console.WriteLine();
-
-        //        Console.Write("Adding items " + alltems.Count);
-        //        ctx.Items.AddRange(alltems);
-        //        Console.WriteLine("Done");
-
-        //        Console.Write("Adding mods " + allItemMods.Count);
-        //        ctx.ItemMods.AddRange(allItemMods);
-        //        Console.WriteLine("Done");
-
-        //        //Console.Write("Adding accounts " + chunkAccounts.Count);
-        //        //ctx.ChunkAccounts.AddRange(chunkAccounts);
-        //        //Console.WriteLine("Done");
-
-        //        Console.Write("Save changes ");
-        //        ctx.SaveChanges();
-        //        Console.WriteLine("Done");
-
-        //    }
-
-
-
-
-
-        //}
-
     }
 }

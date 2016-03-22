@@ -1,0 +1,42 @@
+{
+  "itemQueries": [
+    {
+      "queryName": "Lightning Coil 80/120",
+      "itemName": "Lightning Coil Desert Brigandine",
+      "properties": [
+        {
+          "name": "X to maximum Life",
+          "minValue": "80",
+          "maxValue": ""
+        },
+        {
+          "name": "X% increased Armour and Evasion",
+          "minValue": "120",
+          "maxValue": ""
+        }
+      ]
+    },
+    {
+      "queryName": "Ring with 60+ Life, 40+ Strength, Resistances",
+      "itemNamePattern": "Two-Stone Ring",
+      "properties": [
+        {
+          "name": "X to maximum Life",
+          "minValue": "60"
+        },
+        {
+          "name": "X to Strength",
+          "minValue": "40"
+        },
+        {
+          "name": "X% to Lightning Resistance",
+          "minValue": "40"
+        },
+        {
+          "name": "X% to Cold Resistance",
+          "minValue": "35"
+        }
+      ]
+    }
+  ]
+}

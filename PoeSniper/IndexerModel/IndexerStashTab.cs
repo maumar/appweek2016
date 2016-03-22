@@ -14,6 +14,8 @@ namespace IndexerModel
 
         public string League { get; set; }
 
+        public DateTime DateAdded { get; set; }
+
         // FK -> Account
         public string AccountName { get; set; }
     }

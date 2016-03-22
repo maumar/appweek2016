@@ -143,6 +143,7 @@
     <Compile Include="FeedChunk.cs" />
     <Compile Include="FeedChunkAccount.cs" />
     <Compile Include="ItemMod.cs" />
+    <Compile Include="ItemModName.cs" />
     <Compile Include="ItemRequirement.cs" />
     <Compile Include="ItemWithExplicitMods.cs" />
     <Compile Include="PoeSniperContext.cs" />

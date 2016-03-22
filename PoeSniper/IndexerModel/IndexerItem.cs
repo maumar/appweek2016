@@ -12,7 +12,6 @@ namespace IndexerModel
 
         public string Name { get; set; }
         public int Ilvl { get; set; }
-        public string TypeLine { get; set; }
         public bool Corrupted { get; set; }
 
         // FK -> Stash
