@@ -16,6 +16,9 @@ namespace Indexer
 {
     class Program
     {
+        private static int _fileIndex = 0;
+        private static long _tix = 0;
+
         static void Main(string[] args)
         {
             var nextChunkId = "";
@@ -23,8 +26,8 @@ namespace Indexer
             var itemModNameMapping = new Dictionary<string, int>();
             using (var ctx = new PoeSniperContext())
             {
-                //ctx.Database.EnsureDeleted();
-                //ctx.Database.EnsureCreated();
+                ctx.Database.EnsureDeleted();
+                ctx.Database.EnsureCreated();
 
                 var lastChunk = ctx.FeedChunks.OrderByDescending(e => e.Index).FirstOrDefault();
                 nextChunkId = lastChunk != null ? lastChunk.NextChunkId : "";
@@ -36,11 +39,14 @@ namespace Indexer
             //nextChunkId = "1844560-1954128-1822803-2139656-2027865";
             var cleanupTimer = 0;
 
-            while (true)
+            while (_fileIndex < 10)
             {
                 nextChunkId = FetchItemFeedChunk(nextChunkId, index, itemModNameMapping);
                 index++;
                 cleanupTimer++;
+
+                Console.WriteLine("TOTAL TIME SO FAR: " + new TimeSpan(_tix) + " AVERAGE: " + new TimeSpan(_tix/index));
+
                 if (cleanupTimer == 10)
                 {
                     //DeleteStaleStashTabs();
@@ -70,28 +76,31 @@ namespace Indexer
 
         private static RootObject GetJsonRootObject(string chunkId)
         {
-            var apiUrl = "http://www.pathofexile.com/api/public-stash-tabs/" + chunkId;
+            _fileIndex++;
+            //var apiUrl = "http://www.pathofexile.com/api/public-stash-tabs/" + chunkId;
 
-            Console.WriteLine(DateTime.Now + " Fetching " +
-                (string.IsNullOrEmpty(chunkId)
-                    ? "first chunk"
-                    : "chunk with ID: " + chunkId) + " ");
+            //Console.WriteLine(DateTime.Now + " Fetching " +
+            //    (string.IsNullOrEmpty(chunkId)
+            //        ? "first chunk"
+            //        : "chunk with ID: " + chunkId) + " ");
 
-            var handler = new HttpClientHandler()
-            {
-                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
-            };
+            //var handler = new HttpClientHandler()
+            //{
+            //    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+            //};
 
-            var httpClient = new HttpClient(handler);
-            var getStreamTask = httpClient.GetStreamAsync(apiUrl);
-            getStreamTask.Wait();
-            var stream = getStreamTask.Result;
+            //var httpClient = new HttpClient(handler);
+            //var getStreamTask = httpClient.GetStreamAsync(apiUrl);
+            //getStreamTask.Wait();
+            //var stream = getStreamTask.Result;
 
-            string value = string.Empty;
-            using (var reader = new StreamReader(stream, Encoding.UTF8))
-            {
-                value = reader.ReadToEnd();
-            }
+            //string value = string.Empty;
+            //using (var reader = new StreamReader(stream, Encoding.UTF8))
+            //{
+            //    value = reader.ReadToEnd();
+            //}
+
+            var value = File.ReadAllText("data" + _fileIndex.ToString("00") + ".dat");
 
             var rootObject = JsonConvert.DeserializeObject<RootObject>(value);
 
@@ -198,11 +207,11 @@ namespace Indexer
                         continue;
                     }
 
-                    var league = jsonStash.items.FirstOrDefault()?.league ?? "Unknown";
-                    if (league != "Hardcore Perandus")
-                    {
-                        continue;
-                    }
+                    //var league = jsonStash.items.FirstOrDefault()?.league ?? "Unknown";
+                    //if (league != "Hardcore Perandus")
+                    //{
+                    //    continue;
+                    //}
 
                     var stashTab = new IndexerStashTab
                     {
@@ -337,7 +346,10 @@ namespace Indexer
                     }
                 }
 
-                Console.WriteLine("Done " + sw.Elapsed);
+                var elapsed = sw.Elapsed;
+                Console.WriteLine("Done " + elapsed);
+
+                _tix += elapsed.Ticks;
             }
 
             sw.Restart();
@@ -358,8 +370,8 @@ namespace Indexer
             IEnumerable<IndexerItem> remainingItems = items;
             while (remainingItems.Count() > 0)
             {
-                var batchItems = remainingItems.Take(1000);
-                remainingItems = remainingItems.Skip(1000);
+                var batchItems = remainingItems.Take(20000);
+                remainingItems = remainingItems.Skip(20000);
 
                 using (var ctx = new IndexerPoeSniperContext())
                 {
@@ -382,8 +394,8 @@ namespace Indexer
             IEnumerable<IndexerItemMod> remainingItemMods = itemMods;
             while (remainingItemMods.Count() > 0)
             {
-                var batchItemMods = remainingItemMods.Take(1000);
-                remainingItemMods = remainingItemMods.Skip(1000);
+                var batchItemMods = remainingItemMods.Take(20000);
+                remainingItemMods = remainingItemMods.Skip(20000);
 
                 using (var ctx = new IndexerPoeSniperContext())
                 {
@@ -401,7 +413,10 @@ namespace Indexer
                 Console.Write(".");
             }
 
-            Console.WriteLine(" Done " + sw.Elapsed);
+            var elapsed2 = sw.Elapsed;
+            Console.WriteLine(" Done " + elapsed2);
+            _tix += elapsed2.Ticks;
+
             Console.WriteLine();
 
             return rootObject.next_change_id;
